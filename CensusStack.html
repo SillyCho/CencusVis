@@ -1,0 +1,351 @@
+
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>堆栈图</title>
+    <style>
+
+        .axis path,
+        .axis line{
+            fill: none;
+            stroke: black;
+            shape-rendering: crispEdges;
+        }
+
+        .axis text {
+            font-family: sans-serif;
+            font-size: 11px;
+        }
+
+    </style>
+</head>
+<body>
+<form>
+    Please select which do you focus on:
+    <label><input type="radio" name="mode" value="grouped"> Sex</label>
+    <label><input type="radio" name="mode" value="stacked" checked> Year</label>
+</form>
+<svg width="1200" height="800"></svg>
+<script src="https://d3js.org/d3.v4.js" charset="utf-8"></script>
+<script>
+
+    var svg = d3.select("svg"),
+        margin = {top: 40, right: 10, bottom: 20, left: 35},
+        width = +svg.attr("width") - margin.left - margin.right,
+        height = +svg.attr("height") - margin.top - margin.bottom,
+        g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    //1. 确定初始数据
+    d3.csv("census2000.csv",function(error,data){
+        if (error){
+            console.log(error);
+        }
+        console.log(data);
+        //聚焦性别数据：dataset ； 聚焦年份数据:yearset
+        var dataset1 = [], dataset2 = [], dataset = [],yearset1 = [], yearset2 = [],yearset = [];
+        //聚焦性别
+        for (var j = 0; j < data.length; j++){
+            if (Number(data[j].Year) === 1900)
+                dataset1.push({Sex: Number(data[j].Sex),Year:Number(data[j].Year), Age:Number(data[j].Age), People:Number(data[j].People)});
+            else
+                dataset2.push({Sex: Number(data[j].Sex),Year:Number(data[j].Year), Age:Number(data[j].Age), People:Number(data[j].People)});
+        }
+        dataset1.forEach(function (t1) {
+            dataset2.forEach(function (t2) {
+                if (t1.Age === t2.Age && t1.Sex === t2.Sex)
+                    dataset.push({Sex: t1.Sex, Age: t2.Age, People1: t1.People, People2: t2.People - t1.People} )
+            })
+        });
+
+        //聚焦年份
+        for (j = 0; j < dataset1.length; j++){
+            for (var k = 0; k < j; k++){
+                if (dataset1[j].Age === dataset1[k].Age)
+                    yearset1.push({Year:dataset1[j].Year, Age:dataset1[j].Age, People:dataset1[j].People+dataset1[k].People});   //不分性别
+            }
+        }
+        for (j = 0; j < dataset2.length; j++){
+            for (k = 0; k < j; k++){
+                if (dataset2[j].Age === dataset2[k].Age)
+                    yearset2.push({Year:dataset2[j].Year, Age:dataset2[j].Age, People:dataset2[j].People+dataset2[k].People});   //不分性别
+            }
+        }
+        yearset1.forEach(function (t1) {
+            yearset2.forEach(function (t2) {
+                if (t1.Age === t2.Age)
+                    yearset.push({Age: t2.Age, People1: t1.People, People2: t2.People - t1.People} )
+            })
+        });
+        console.log(dataset);
+        console.log(yearset);
+
+
+        var peopleMax = d3.max(dataset2,function (d) { return d.People});
+        var yearMax = d3.max(yearset2,function (d) { return d.People});
+        //2. 转换数据
+        var stack = d3.stack().keys(["People1","People2"]);
+
+
+        var dataStack = stack(dataset);
+        var yearStack = stack(yearset);
+
+
+
+        //3. 绘制
+
+        //创建x轴比例尺
+        var ageScale = d3.scaleBand()
+            .domain(d3.range(0,91,5))
+            .rangeRound([0, width])
+            .padding(0.4);
+
+        //创建y轴比例尺
+        var peopleScale = d3.scaleLinear()
+            //.domain([0, peopleMax*1.1])        //*1.1避免图形在边界处绘制
+            .domain([0,yearMax*1.1])
+            .range([height, 0]);
+
+
+        //添加矩形
+        var series = g.selectAll(".series")
+            .data(yearStack)
+            .enter().append("g");
+
+
+        var rect = series.selectAll("rect")
+            .data(function (d) {
+                return d;
+            })
+            .enter().append("rect")
+            .attr("x", function(d, i) {
+                return ageScale(this.parentNode.__data__[i].data.Age);
+            })
+            .attr("y", height)
+            .attr("width", ageScale.bandwidth())
+            .attr("height", 0)
+            .attr("transform", "translate(" + margin.left + ",0)");
+
+        rect.transition()
+            .delay(function(d, i) { return i * 10; })
+            .attr("y", function(d ) { return peopleScale(d[1]); })
+            .attr("height", function(d ) { return height - peopleScale(d[1] - d[0]); })
+            .attr("fill", function (d) {
+                if ( d[0] > 0 ){
+                        return "LightSkyBlue";
+                }
+                else
+                {
+                        return "DodgerBlue";
+                }
+            });
+
+
+        g.append("g")
+            .attr("class", "axis axis--x")
+            .attr("transform", "translate(" + margin.left + ","  + height + ")")
+            .call(d3.axisBottom(ageScale)
+                .tickSize(5)
+                .tickPadding(6));
+
+        var y = g.append("g")
+            .attr("class", "axis axis--y")
+            .attr("transform", "translate(" + margin.left + ",0)")
+            .call(d3.axisLeft(peopleScale)
+                .tickSize(0)
+                .tickPadding(6));
+
+
+        //添加标签
+        //颜色比例尺
+        var colorScale = d3.scaleOrdinal().domain(d3.range(4)).range(["DodgerBlue","LightSkyBlue","Salmon","LightSalmon"]);
+        //标签名比例尺
+        var nameScale1 = d3.scaleOrdinal().domain(d3.range(2)).range(["1900","growth up to 2000"]);
+        var nameScale2 = d3.scaleOrdinal().domain(d3.range(4)).range(["1900 male","growth up to 2000 for male","1900 female","growth up to 2000 for female"]);
+        //添加分组标签
+        var labLength = 10;
+        var label, labelText;
+        for (var i = 0; i < 2; i++){
+             label = g.append("rect")
+                .attr("x", width - margin.right*18)
+                .attr("y", labLength*2*i)
+                .attr("width",labLength)
+                .attr("height",labLength)
+                 .attr("fill",colorScale(i))
+                 .attr("class","label");
+
+             labelText = g.append("text")
+                .attr("x",width - margin.right*17)
+                .attr("y",labLength * 2*i)
+                .attr("dy",labLength/2)
+                 .attr("class","label")
+                 .attr("style","font-family: sans-serif;font-size: 12px")
+                .text(nameScale1(i));
+        }
+
+
+
+        //根据选择更新图形
+        d3.selectAll("input")
+            .on("change", changed);
+
+        var timeout = d3.timeout(function() {
+            d3.select("input[value=\"grouped\"]")
+                .property("checked", true)
+                .dispatch("change");
+        }, 2000);
+
+        function changed() {
+            timeout.stop();
+            if (this.value === "grouped") transitionGrouped();
+            else transitionStacked();
+        }
+
+        function transitionGrouped() {
+            peopleScale.domain([0, peopleMax]);
+            series.data(dataStack);
+            console.log("sex");
+
+            var update = series.selectAll("rect").data(function (d) {return d;});
+            var enter = update.enter();
+
+            //更新
+            update.transition()
+                .duration(500)
+                .delay(function(d, i) { return i * 10; })
+                .attr("x", function(d) {
+                    return ageScale(d.data.Age) + ageScale.bandwidth() / 2 * (d.data.Sex - 1);
+                })
+                .attr("width", ageScale.bandwidth()/2)
+                .transition()
+                .attr("y", function(d ) { return peopleScale(d[1]); })
+                .attr("height", function(d ) { return height - peopleScale(d[1] - d[0]); })
+                .attr("fill", function (d) {
+                     if ( (d.data.Sex + d[0]) > d.data.Sex ){
+                         if (d.data.Sex === 1)
+                             return "LightSkyBlue";
+                         else
+                             return "LightSalmon";
+                     }
+                     else
+                     {
+                         if (d.data.Sex === 1)
+                             return "DodgerBlue";
+                         else
+                             return "Salmon";
+                     }
+                 });
+
+            //添加部分
+            enter.append("rect").transition()
+                .duration(500)
+                .delay(function(d, i) {  return i * 10; })
+                .attr("x", function(d) {
+                    return ageScale(d.data.Age) + ageScale.bandwidth() / 2 * (d.data.Sex - 1);
+                })
+                .attr("width", ageScale.bandwidth()/2)
+                .transition()
+                .attr("y", function(d ) { return peopleScale(d[1]); })
+                .attr("height", function(d ) { return height - peopleScale(d[1] - d[0]); })
+                .attr("fill", function (d) {
+                    if ( (d.data.Sex + d[0]) > d.data.Sex ){
+                        if (d.data.Sex === 1)
+                            return "LightSkyBlue";
+                        else
+                            return "LightSalmon";
+                    }
+                    else
+                    {
+                        if (d.data.Sex === 1)
+                            return "SkyBlue";
+                        else
+                            return "Salmon";
+                    }
+                })
+                .attr("transform", "translate(" + margin.left + ",0)");
+
+
+            y.call(d3.axisLeft(peopleScale));
+
+            g.selectAll(".label").remove();
+
+            for (var i = 0; i < 4; i++){
+                label = g.append("rect")
+                    .attr("x", width - margin.right*18)
+                    .attr("y", labLength*2*i)
+                    .attr("width",labLength)
+                    .attr("height",labLength)
+                    .attr("fill",colorScale(i))
+                    .attr("class","label");
+
+                labelText = g.append("text")
+                    .attr("x",width - margin.right*17)
+                    .attr("y",labLength * 2*i)
+                    .attr("dy",labLength/2)
+                    .attr("class","label")
+                    .attr("style","font-family: sans-serif;font-size: 12px")
+                    .text(nameScale2(i));
+            }
+
+        }
+
+        function transitionStacked() {
+
+            peopleScale.domain([0, yearMax]);
+            series.data(yearStack);
+            console.log("year");
+
+            var update = series.selectAll("rect").data(function (d) {return d;});
+            var exit = update.exit();
+
+            //更新
+            update.transition()
+                .duration(500)
+                .delay(function(d, i) { return i * 10; })
+                .attr("y", function(d ) { return peopleScale(d[1]); })
+                .attr("height", function(d ) { return height - peopleScale(d[1] - d[0]); })
+                .attr("fill", function (d) {
+                    if ( d[0] > 0 ){
+                        return "LightSkyBlue";
+                    }
+                    else
+                    {
+                        return "DodgerBlue";
+                    }
+                })
+                .transition()
+                .attr("x", function(d) {
+                    console.log(d);
+                    return ageScale(d.data.Age);
+                })
+                .attr("width", ageScale.bandwidth());
+
+            //删除
+            exit.remove();
+
+
+            y.call(d3.axisLeft(peopleScale));
+
+            g.selectAll(".label").remove();
+            for (var i = 0; i < 2; i++){
+                label = g.append("rect")
+                    .attr("x", width - margin.right*18)
+                    .attr("y", labLength*2*i)
+                    .attr("width",labLength)
+                    .attr("height",labLength)
+                    .attr("fill",colorScale(i))
+                    .attr("class","label");
+
+                labelText = g.append("text")
+                    .attr("x",width - margin.right*17)
+                    .attr("y",labLength * 2*i)
+                    .attr("dy",labLength/2)
+                    .attr("class","label")
+                    .attr("style","font-family: sans-serif;font-size: 12px")
+                    .text(nameScale1(i));
+            }
+        }
+    });
+</script>
+
+</body>
+</html>  
